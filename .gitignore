@@ -1,0 +1,80 @@
+# ── Build output ───────────────────────────────────────────────
+build/
+cmake-build-*/
+out/
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.so
+*.dll
+*.exe
+
+# ── CMake ──────────────────────────────────────────────────────
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# ── JUCE / dependencies fetched at configure time ──────────────
+# JUCE is pulled via FetchContent; never commit the checkout.
+_deps/
+Builds/
+JuceLibraryCode/
+*.jucer.user
+
+# ── Plugin bundles & install artifacts ─────────────────────────
+*.vst3
+*.component
+*.aaxplugin
+*.app
+*.dmg
+*.pkg
+*.exe.manifest
+
+# ── ML model weights (large, fetched/exported separately) ──────
+# Track the export *script*, never the binary weights.
+*.onnx
+*.onnx.data
+*.onnx_data
+*.pt
+*.ckpt
+*.safetensors
+Models/weights/
+# Spike scratch (keep the scripts + README + results json, ignore generated models)
+Models/spike/_probe_*
+
+# ── Python (model export tooling) ──────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
+
+# ── Audio test fixtures (large) ────────────────────────────────
+Tests/fixtures/*.wav
+Tests/fixtures/*.flac
+Tests/fixtures/*.mp3
+*.stem.wav
+
+# ── IDE / editor ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+.cache/
+*.swp
+
+# ── macOS / Windows cruft ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Local Claude state (keep skills + CLAUDE.md, ignore the rest)
+.claude/settings.local.json

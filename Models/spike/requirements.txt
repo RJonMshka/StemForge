@@ -1,0 +1,11 @@
+# R1 spike — PyTorch → ONNX export feasibility for BS-RoFormer.
+# Pin loosely for the spike; the shipping export will pin exact versions in Models/README.md.
+#
+# IMPORTANT: PyTorch wheels target specific CPython versions. As of this spike the local
+# interpreter is CPython 3.14, which PyTorch may not yet support. Use a 3.12 venv if the
+# 3.14 resolve fails (see Models/spike/README.md → "Environment").
+torch>=2.4
+onnx>=1.16
+onnxruntime>=1.18
+numpy>=1.24
+soundfile>=0.12   # only needed for 03_validate_parity.py (real audio)
