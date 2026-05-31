@@ -274,7 +274,7 @@ a mitigation. Revisit this table at every phase boundary.
 
 | # | Risk / Open question | Severity | Mitigation |
 |---|---|---|---|
-| R1 | **BS-RoFormer → ONNX export may not be clean.** RoFormer uses STFT/iSTFT + complex-number ops; ONNX support for these is opset-sensitive and historically fiddly. | ~~High~~ **Med** (spike done) | **SPIKE DONE (`Models/spike/`).** Native `torch.stft`/`istft` export is unreliable in our toolchain (torch 2.12 / ORT 1.26): TorchScript exporter rejects complex STFT; dynamo exporter emits a *silently wrong* istft. **Resolution:** substitute a conv-based STFT/ISTFT (`Conv1d`/`ConvTranspose1d`) — proven to export with basic ops only and match PyTorch to **4.8e-6 (122.8 dB)**, dynamic chunk lengths included. Remaining unknown is only the attention/band-split blocks (standard ops). HT-Demucs stays as a fallback. |
+| R1 | **BS-RoFormer → ONNX export may not be clean.** RoFormer uses STFT/iSTFT + complex-number ops; ONNX support for these is opset-sensitive and historically fiddly. | ~~High~~ **Med** (spike done) | **SPIKE DONE (`Models/spike/`).** Native `torch.stft`/`istft` export is unreliable in our toolchain (torch 2.12 / ORT 1.26): TorchScript exporter rejects complex STFT; dynamo exporter emits a *silently wrong* istft. **Resolution:** substitute a conv-based STFT/ISTFT (`Conv1d`/`ConvTranspose1d`) — proven to export with basic ops only and match PyTorch to **4.8e-6 (122.8 dB)**, dynamic chunk lengths included. **R1b now CLOSED for HTDemucs:** the full model exports with the conv-STFT substitution + MHA fast-path disabled (`set_fastpath_enabled(False)` — the fused `_native_multi_head_attention` is the only other op the exporter rejects); ONNX-vs-native parity worst-stem **54.7 dB**. The attention/transformer blocks export as standard ops. BS-RoFormer R1b still pending its weights. |
 | R2 | **Stage-2 drum split was mis-specified** (see ⚠ note in Model Architecture). HPSS can't name drum sub-stems. | High | Pick one of the three revised options before Phase 3. Recommended: ship Stage 1 first (option 3), then add an ML drum model (option 1). |
 | R3 | **Tensor layout / channel order mismatch** silently produces garbage stems. | Med | Confirm model IO names + dims with Netron; assert shapes at runtime; golden-file test in Phase 1. |
 | R4 | **Memory pressure** — holding 6 full-length stem buffers ≈ 380 MB for a 3-min song, before counting model arenas. | Med | Stream each stem to disk as it finishes instead of holding all six; reuse segment buffers. Decide in Phase 1. |
@@ -320,16 +320,40 @@ build && ctest --test-dir build`.
 
 ---
 
-### Phase 1 — ONNX Inference Harness (Week 3–4)
-**Goal:** Run BS-RoFormer ONNX model on a file from C++ and write stems to disk. Headless (no UI required yet).
+### Phase 1 — ONNX Inference Harness (Week 3–4) — 🟢 HARNESS COMPLETE; HTDemucs EXPORTED & VALIDATED
+**Goal:** Run a separation model on a file from C++ and write stems to disk. Headless (no UI yet).
 
 Tasks:
-- [ ] Export BS-RoFormer-SW from PyTorch to ONNX (Python script, documented)
-- [ ] Write `ONNXInferenceEngine` class
-- [ ] Implement audio chunking (segment + overlap logic)
-- [ ] Implement overlap-add reconstruction
-- [ ] Validate output quality vs Python reference implementation
-- [ ] Write stems as 32-bit float WAV files via `juce::WavAudioFormat`
+- [x] Export the default Stage-1 model (**HTDemucs, MIT**) from PyTorch to ONNX —
+      `Models/spike/04_export_htdemucs.py` acquires the MIT weights (auto-download via
+      `demucs.pretrained`), substitutes the conv-STFT (R1a), disables the MHA fast path, and
+      exports `[batch,2,343980]→[batch,4,2,343980]` (drums/bass/other/vocals, opset 17).
+      Parity vs native PyTorch validated: self-check **117 dB**, end-to-end worst-stem
+      **54.7 dB** ≫ the 0.1 dB bar (`05_validate_htdemucs.py`). **HTDemucs uses a FIXED
+      343980-sample chunk** (7.8 s) — the chunker must match this (unlike BS-RoFormer).
+- [~] BS-RoFormer-SW export remains **opt-in & gated on a weights download**
+      (`Models/spike/02_export…`; 699 MB / License: unknown per R8). Scripts ready; not run.
+- [x] Write `ONNXInferenceEngine` class — `Source/Separation/ONNXInferenceEngine.*` (PIMPL,
+      model-agnostic IO discovery, `Ort::Exception`→`juce::Result`, CPU-only per R6).
+- [x] Implement audio chunking (segment + overlap logic) — `Source/Separation/AudioChunker.*`.
+- [x] Implement overlap-add reconstruction — `OverlapAdder` (sin² periodic Hann +
+      window-sum normalization; **lossless to ~1e-7**, `StemForgeChunkerTest` ctest, 7 cases).
+- [x] Validate output quality vs Python reference — **harness validated against a generated
+      dummy ONNX model** (`Tests/make_dummy_model.py`): `stem_0+stem_1==mix` to ~1e-8,
+      same-rate path bit-exact — **and against the real HTDemucs export**
+      (`05_validate_htdemucs.py`: ONNX↔native PyTorch worst-stem **54.7 dB**).
+- [x] Write stems as 32-bit float WAV files via `juce::WavAudioFormat` —
+      `Source/Separation/StemWriter.*` (clamps to ±1, reuses the Phase-0 writer).
+
+Also delivered: `StemForgeSeparate` headless driver (Tests/SeparateCli.cpp) wires the whole
+pipeline (load → resample to 44.1 kHz per R5 → chunk → infer → overlap-add → resample back →
+write); ONNX Runtime 1.20.1 fetched/linked via `-DSTEMFORGE_WITH_ONNXRUNTIME=ON` (R6). The
+engine now reports the model's required input length (`getRequiredInputSamples()`) so the
+chunker auto-sizes to HTDemucs' fixed 343980-sample segment (0 ⇒ dynamic, e.g. BS-RoFormer).
+
+**Phase 1 CLOSED.** Ran end-to-end on a real 110 s song (HTDemucs ONNX, 19 segments) → 4
+full-length stems (drums/bass/other/vocals); sum-of-stems reconstructs the mix to −35 dB
+residual, confirming correct inference + seamless overlap-add. See `Models/README.md`.
 
 **Learning checkpoint:** Understand ONNX's session/tensor API, chunking strategies, overlap-add.
 

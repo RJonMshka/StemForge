@@ -1,5 +1,6 @@
 # ── Build output ───────────────────────────────────────────────
 build/
+build-*/
 cmake-build-*/
 out/
 *.o
@@ -56,7 +57,12 @@ env/
 *.egg-info/
 .ipynb_checkpoints/
 
-# ── Audio test fixtures (large) ────────────────────────────────
+# ── Audio test fixtures + generated stem output (large) ────────
+# Recursive (**) so generated stems in subdirs (e.g. Tests/fixtures/stems_out/) are ignored
+# too — a single * does not cross '/'.
+Tests/fixtures/**/*.wav
+Tests/fixtures/**/*.flac
+Tests/fixtures/**/*.mp3
 Tests/fixtures/*.wav
 Tests/fixtures/*.flac
 Tests/fixtures/*.mp3

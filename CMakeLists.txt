@@ -48,7 +48,9 @@ target_sources(StemForge PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/UI/FileDropZone.cpp
-    Source/IO/AudioFileIO.cpp)
+    Source/IO/AudioFileIO.cpp
+    Source/Separation/AudioChunker.cpp
+    Source/Separation/StemWriter.cpp)
 
 target_include_directories(StemForge PRIVATE Source)
 
@@ -68,10 +70,33 @@ target_link_libraries(StemForge
         juce::juce_recommended_warning_flags)
 
 # ── ONNX Runtime (Phase 1+, gated OFF) ─────────────────────────────────────────
+# The inference engine only compiles when ORT is available (it includes Ort headers),
+# so its source and the headless separation driver live inside this block.
 if(STEMFORGE_WITH_ONNXRUNTIME)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onnxruntime.cmake)
+    target_sources(StemForge PRIVATE Source/Separation/ONNXInferenceEngine.cpp)
     target_link_libraries(StemForge PRIVATE onnxruntime::onnxruntime)
     target_compile_definitions(StemForge PRIVATE STEMFORGE_HAS_ONNX=1)
+
+    # Headless Phase 1 harness: model + audio file in → stem WAVs out. The end-to-end
+    # integration of chunker → engine → overlap-add → writer, runnable from a shell.
+    juce_add_console_app(StemForgeSeparate PRODUCT_NAME "StemForgeSeparate")
+    target_sources(StemForgeSeparate PRIVATE
+        Tests/SeparateCli.cpp
+        Source/Separation/AudioChunker.cpp
+        Source/Separation/StemWriter.cpp
+        Source/Separation/ONNXInferenceEngine.cpp
+        Source/IO/AudioFileIO.cpp)
+    target_include_directories(StemForgeSeparate PRIVATE Source)
+    target_compile_definitions(StemForgeSeparate PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 STEMFORGE_HAS_ONNX=1)
+    target_link_libraries(StemForgeSeparate
+        PRIVATE
+            juce::juce_audio_formats
+            onnxruntime::onnxruntime
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
 endif()
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -95,3 +120,20 @@ target_link_libraries(StemForgeRoundtripTest
 add_test(NAME roundtrip_lossless
     COMMAND StemForgeRoundtripTest
             "${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures/sine_stereo_f32.wav")
+
+# Phase 1: overlap-add reconstruction must be lossless for an identity model (no ORT needed).
+juce_add_console_app(StemForgeChunkerTest PRODUCT_NAME "StemForgeChunkerTest")
+target_sources(StemForgeChunkerTest PRIVATE
+    Tests/AudioChunkerTest.cpp
+    Source/Separation/AudioChunker.cpp)
+target_include_directories(StemForgeChunkerTest PRIVATE Source)
+target_compile_definitions(StemForgeChunkerTest PRIVATE
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+target_link_libraries(StemForgeChunkerTest
+    PRIVATE
+        juce::juce_audio_basics
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+
+add_test(NAME chunker_overlap_add_lossless COMMAND StemForgeChunkerTest)

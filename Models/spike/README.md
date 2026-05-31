@@ -3,7 +3,9 @@
 **Risk under test (PLAN R1):** BS-RoFormer's STFT/iSTFT + complex ops may not export to
 ONNX cleanly, which would sink the whole "train in PyTorch, run in C++" architecture.
 
-**Status: R1a RESOLVED (the STFT primitive). R1b PENDING (full model, needs weights).**
+**Status: R1a RESOLVED (the STFT primitive). R1b RESOLVED for HTDemucs (the shippable
+default) — exported & validated end-to-end. BS-RoFormer-SW still PENDING (opt-in, needs
+its 699 MB unknown-license weights).**
 
 ---
 
@@ -81,10 +83,15 @@ chunks. R1a is closed.
 > Validate R1b against **HTDemucs first** (clean license, easier export); the BS-RoFormer
 > scripts below stay for the opt-in path and for local dev testing.
 
-`02_export_bs_roformer.py` and `03_validate_parity.py` are ready but need a real
-**checkpoint + YAML config** (large, **not in git**, see `.gitignore`). For BS-RoFormer-SW,
-note its 699 MB pickle is **License: unknown** — fine to use locally for testing, do not
-redistribute. Once acquired:
+**HTDemucs (default) is done** — `04_export_htdemucs.py` acquires the MIT weights
+(auto-download via `demucs.pretrained`), substitutes the conv-STFT (R1a), disables the MHA
+fast path, and exports to ONNX; `05_validate_htdemucs.py` confirms parity (worst-stem 54.7 dB
+vs native PyTorch, self-check 117 dB). See `../README.md` → "HTDemucs (default, MIT)".
+
+`02_export_bs_roformer.py` and `03_validate_parity.py` (the **opt-in** BS-RoFormer path) are
+ready but need a real **checkpoint + YAML config** (large, **not in git**, see `.gitignore`).
+For BS-RoFormer-SW, note its 699 MB pickle is **License: unknown** — fine to use locally for
+testing, do not redistribute. Once acquired:
 
 ```bash
 pip install bs-roformer pyyaml soundfile
@@ -99,7 +106,9 @@ Before that run, wire the conv-STFT substitution into `02` (marked `# STFT subst
 ## Files
 - `01_stft_onnx_probe.py` — native-export attempts (records the failures above).
 - `01b_conv_stft_probe.py` — **the portable conv-STFT proof** (the actionable result).
-- `02_export_bs_roformer.py` — full-model export (gated on checkpoint).
-- `03_validate_parity.py` — PyTorch-vs-ONNX SDR parity check (gated on checkpoint).
+- `02_export_bs_roformer.py` — BS-RoFormer export (opt-in; gated on checkpoint).
+- `03_validate_parity.py` — BS-RoFormer PyTorch-vs-ONNX SDR parity (gated on checkpoint).
+- `04_export_htdemucs.py` — **HTDemucs acquire + ONNX export** (default model; fully scripted).
+- `05_validate_htdemucs.py` — **HTDemucs PyTorch-vs-ONNX SDR parity** (acceptance gate).
 - `results_stft_probe.json` — machine-readable results from `01`.
 - `requirements.txt` — spike deps. `.venv/`, `*.onnx` are gitignored.
