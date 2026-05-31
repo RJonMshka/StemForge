@@ -57,6 +57,34 @@ void StemForgeProcessor::setStateInformation (const void* data, int sizeInBytes)
     }
 }
 
+juce::File StemForgeProcessor::getDefaultModelFile() const
+{
+    const auto env = juce::SystemStats::getEnvironmentVariable ("STEMFORGE_MODEL_PATH", {});
+    if (env.isNotEmpty())
+        return juce::File (env);
+   #if defined(STEMFORGE_DEFAULT_MODEL_PATH)
+    return juce::File (STEMFORGE_DEFAULT_MODEL_PATH);
+   #else
+    return {};
+   #endif
+}
+
+#if defined(STEMFORGE_HAS_ONNX)
+void StemForgeProcessor::startSeparation (const juce::File& input,
+                                          const juce::File& outputDir,
+                                          const juce::StringArray& displayNames,
+                                          const juce::StringArray& enabledStems)
+{
+    m_state.setProperty ("inputFile", input.getFullPathName(),     nullptr);
+    m_state.setProperty ("outputDir", outputDir.getFullPathName(), nullptr);
+    m_worker.startSeparation (getDefaultModelFile(), input, outputDir, displayNames, enabledStems);
+}
+
+void StemForgeProcessor::cancelSeparation()
+{
+    m_worker.cancel();
+}
+#else
 juce::Result StemForgeProcessor::loadAndVerifyRoundtrip (const juce::File& input,
                                                          const juce::File& writtenCopy,
                                                          float& maxAbsDiffOut)
@@ -64,6 +92,7 @@ juce::Result StemForgeProcessor::loadAndVerifyRoundtrip (const juce::File& input
     m_state.setProperty ("inputFile", input.getFullPathName(), nullptr);
     return AudioFileIO::verifyRoundtripLossless (input, writtenCopy, maxAbsDiffOut);
 }
+#endif
 } // namespace stemforge
 
 // ── JUCE plugin entry point ───────────────────────────────────────────────────

@@ -74,9 +74,15 @@ target_link_libraries(StemForge
 # so its source and the headless separation driver live inside this block.
 if(STEMFORGE_WITH_ONNXRUNTIME)
     include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/onnxruntime.cmake)
-    target_sources(StemForge PRIVATE Source/Separation/ONNXInferenceEngine.cpp)
+    target_sources(StemForge PRIVATE
+        Source/Separation/ONNXInferenceEngine.cpp
+        Source/Separation/SeparationWorker.cpp)
     target_link_libraries(StemForge PRIVATE onnxruntime::onnxruntime)
-    target_compile_definitions(StemForge PRIVATE STEMFORGE_HAS_ONNX=1)
+    target_compile_definitions(StemForge PRIVATE
+        STEMFORGE_HAS_ONNX=1
+        # Phase-2 dev default model (proper bundling is Phase 4). Overridable at runtime via
+        # the STEMFORGE_MODEL_PATH env var — see StemForgeProcessor::getDefaultModelFile().
+        STEMFORGE_DEFAULT_MODEL_PATH="${CMAKE_CURRENT_SOURCE_DIR}/Models/weights/htdemucs.onnx")
 
     # Headless Phase 1 harness: model + audio file in → stem WAVs out. The end-to-end
     # integration of chunker → engine → overlap-add → writer, runnable from a shell.
@@ -93,6 +99,29 @@ if(STEMFORGE_WITH_ONNXRUNTIME)
     target_link_libraries(StemForgeSeparate
         PRIVATE
             juce::juce_audio_formats
+            onnxruntime::onnxruntime
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    # Phase-2 verification harness: drives the real SeparationWorker (thread + progress +
+    # AsyncUpdater completion) under a live MessageManager — the path the Analyze button hits.
+    juce_add_console_app(StemForgeWorkerDriver PRODUCT_NAME "StemForgeWorkerDriver")
+    target_sources(StemForgeWorkerDriver PRIVATE
+        Tests/WorkerDriver.cpp
+        Source/Separation/SeparationWorker.cpp
+        Source/Separation/AudioChunker.cpp
+        Source/Separation/StemWriter.cpp
+        Source/Separation/ONNXInferenceEngine.cpp
+        Source/IO/AudioFileIO.cpp)
+    target_include_directories(StemForgeWorkerDriver PRIVATE Source)
+    target_compile_definitions(StemForgeWorkerDriver PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 STEMFORGE_HAS_ONNX=1
+        JUCE_MODAL_LOOPS_PERMITTED=1)   # enables runDispatchLoopUntil for the pump loop
+    target_link_libraries(StemForgeWorkerDriver
+        PRIVATE
+            juce::juce_audio_formats
+            juce::juce_events
             onnxruntime::onnxruntime
         PUBLIC
             juce::juce_recommended_config_flags
